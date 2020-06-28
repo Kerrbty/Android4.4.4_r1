@@ -20,27 +20,27 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#include <err.h>
+#include <app.h>
 #include <debug.h>
-#include <platform.h>
-#include "platform_p.h"
+#include <app/tests.h>
+#include <compiler.h>
 
-void platform_init_mmu_mappings(void)
+#if defined(WITH_LIB_CONSOLE)
+#include <lib/console.h>
+
+STATIC_COMMAND_START
+STATIC_COMMAND("printf_tests", NULL, (console_cmd)&printf_tests)
+STATIC_COMMAND("thread_tests", NULL, (console_cmd)&thread_tests)
+STATIC_COMMAND_END(tests);
+
+#endif
+
+static void tests_init(const struct app_descriptor *app)
 {
 }
 
-void platform_early_init(void)
-{
-	/* 初始化中断 */
-	platform_init_interrupts();
-
-	/* 初始化定时器 */
-	platform_init_timer();
-}
-
-void platform_init(void)
-{
-	platform_init_blkdev();
-	platform_init_display();
-}
+APP_START(tests)
+	.init = tests_init,
+	.flags = 0,
+APP_END
 

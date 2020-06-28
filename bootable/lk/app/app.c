@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008 Travis Geiselbrecht
+ * Copyright (c) 2009 Travis Geiselbrecht
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -20,27 +20,53 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#include <err.h>
 #include <debug.h>
-#include <platform.h>
-#include "platform_p.h"
+#include <app.h>
+#include <kernel/thread.h>
 
-void platform_init_mmu_mappings(void)
+extern const struct app_descriptor __apps_start;
+extern const struct app_descriptor __apps_end;
+
+static void start_app(const struct app_descriptor *app);
+
+/* one time setup */
+void apps_init(void)
 {
+	const struct app_descriptor *app;
+
+	/* call all the init routines */
+	for (app = &__apps_start; app != &__apps_end; app++) {
+		if (app->init)
+			app->init(app);
+	}
+
+	/* start any that want to start on boot */
+	for (app = &__apps_start; app != &__apps_end; app++) {
+		if (app->entry && (app->flags & APP_FLAG_DONT_START_ON_BOOT) == 0) {
+			start_app(app);
+		}
+	}
 }
 
-void platform_early_init(void)
+static int app_thread_entry(void *arg)
 {
-	/* 初始化中断 */
-	platform_init_interrupts();
+	const struct app_descriptor *app = (const struct app_descriptor *)arg;
 
-	/* 初始化定时器 */
-	platform_init_timer();
+	app->entry(app, NULL);
+
+	return 0;
 }
 
-void platform_init(void)
+static void start_app(const struct app_descriptor *app)
 {
-	platform_init_blkdev();
-	platform_init_display();
+	thread_t *thr;
+	printf("starting app %s\n", app->name);
+
+	thr = thread_create(app->name, &app_thread_entry, (void *)app, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+	if(!thr)
+	{
+		return;
+	}
+	thread_resume(thr);
 }
 

@@ -129,14 +129,15 @@ static int bootstrap2(void *arg)
 	fs_init();
 #endif
 
-	// initialize the rest of the platform
+	//  在 acpu_clock_init 对 arm11 进行系统时钟设置，超频 
 	dprintf(SPEW, "initializing platform\n");
 	platform_init();
 	
-	// initialize the target
+	// 针对硬件平台进行设置。主要对 arm9 和 arm11 的分区表进行整合，初始化flash和读取FLASH信息 
 	dprintf(SPEW, "initializing target\n");
 	target_init();
 
+    // 对 LK 中所谓 app 初始化并运行起来，而 aboot_init 就将在这里开始被运行，android linux 内核的加载工作就在 aboot_init 中完成的  
 	dprintf(SPEW, "calling apps_init()\n");
 	apps_init();
 
@@ -150,11 +151,11 @@ void bootstrap_nandwrite(void)
 
 	arch_init();
 
-	// initialize the rest of the platform
+	// 在 acpu_clock_init 对 arm11 进行系统时钟设置，超频 
 	dprintf(SPEW, "initializing platform\n");
 	platform_init();
 
-	// initialize the target
+	// 针对硬件平台进行设置。主要对 arm9 和 arm11 的分区表进行整合，初始化flash和读取FLASH信息 
 	dprintf(SPEW, "initializing target\n");
 	target_init();
 

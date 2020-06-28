@@ -20,27 +20,11 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#include <err.h>
-#include <debug.h>
-#include <platform.h>
-#include "platform_p.h"
+#ifndef __APP_TESTS_H
+#define __APP_TESTS_H
 
-void platform_init_mmu_mappings(void)
-{
-}
+int thread_tests(void);
+void printf_tests(void);
 
-void platform_early_init(void)
-{
-	/* 初始化中断 */
-	platform_init_interrupts();
-
-	/* 初始化定时器 */
-	platform_init_timer();
-}
-
-void platform_init(void)
-{
-	platform_init_blkdev();
-	platform_init_display();
-}
+#endif
 

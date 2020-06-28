@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008 Travis Geiselbrecht
+ * Copyright (c) 2009 Travis Geiselbrecht
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -20,27 +20,22 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#include <err.h>
+#include <app.h>
 #include <debug.h>
-#include <platform.h>
-#include "platform_p.h"
+#include <lib/console.h>
 
-void platform_init_mmu_mappings(void)
+static void shell_init(const struct app_descriptor *app)
 {
+	console_init();
 }
 
-void platform_early_init(void)
+static void shell_entry(const struct app_descriptor *app, void *args)
 {
-	/* 初始化中断 */
-	platform_init_interrupts();
-
-	/* 初始化定时器 */
-	platform_init_timer();
+	console_start();
 }
 
-void platform_init(void)
-{
-	platform_init_blkdev();
-	platform_init_display();
-}
+APP_START(shell)
+	.init = shell_init,
+	.entry = shell_entry,
+APP_END
 
