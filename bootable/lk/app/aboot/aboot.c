@@ -143,13 +143,14 @@ static void ptentry_to_tag(unsigned **ptr, struct ptentry *ptn)
 	*ptr += sizeof(struct atag_ptbl_entry) / sizeof(unsigned);
 }
 
+/* 内核引导参数处理,并直接跳入kernel执行 */
 void boot_linux(void *kernel, unsigned *tags,
 		const char *cmdline, unsigned machtype,
 		void *ramdisk, unsigned ramdisk_size)
 {
 	unsigned *ptr = tags;
 	unsigned pcount = 0;
-	void (*entry)(unsigned,unsigned,unsigned*) = kernel;
+	void (*entry)(unsigned,unsigned,unsigned*) = kernel; // 设置hdr->kernel_addr函数指针，最后跳入运行 
 	struct ptable *ptable;
 	int cmdline_len = 0;
 	int have_cmdline = 0;
@@ -160,6 +161,7 @@ void boot_linux(void *kernel, unsigned *tags,
 	*ptr++ = 2;
 	*ptr++ = 0x54410001;
 
+	/* 传递 ramdisk 的 size 和 address 给kernel，其中0x54410001是个 magic number. */
 	if (ramdisk_size) {
 		*ptr++ = 4;
 		*ptr++ = 0x54420005;
@@ -181,6 +183,7 @@ void boot_linux(void *kernel, unsigned *tags,
 		}
 	}
 
+	/* 传递(cmdline 给kernel，类似uboot的bootargs        */ 
 	if (cmdline && cmdline[0]) {
 		cmdline_len = strlen(cmdline);
 		have_cmdline = 1;
@@ -360,9 +363,21 @@ void boot_linux(void *kernel, unsigned *tags,
 	enter_critical_section();
 	/* do any platform specific cleanup before kernel entry */
 	platform_uninit();
+	/* 关掉cache和mmu */
 	arch_disable_cache(UCACHE);
 	arch_disable_mmu();
-	entry(0, machtype, tags);
+	
+	/*
+	调到entry开始执行kernel，传递三个参数: 
+	  第一个固定为0，
+	  第二个machtype被定义成LINUX_MACHTYPE，一般在对应平台的init.c中定义，
+	  第三个参数tags，就是传给给kernel的参数.
+	*/
+	/* 
+	一般Android源码工程默认不包含Linux Kernel代码 ，
+	编译好的二进制在 /prebuilts/qemu-kernel/[cpu架构]/kernel-qemu 
+	*/
+	entry(0, machtype, tags); /* 跳入kernel执行 */
 }
 
 unsigned page_size = 0;
@@ -393,6 +408,8 @@ int boot_linux_from_mmc(void)
 		hdr = uhdr;
 		goto unified_boot;
 	}
+
+	/* 获取指定分区的索引index，并获取分区所在的扇区首地址ptn */
 	if (!boot_into_recovery) {
 		index = partition_get_index("boot");
 		ptn = partition_get_offset(index);
@@ -410,28 +427,32 @@ int boot_linux_from_mmc(void)
 		}
 	}
 
+	/* 读取分区的首页数据 */
 	if (mmc_read(ptn + offset, (unsigned int *) buf, page_size)) {
 		dprintf(CRITICAL, "ERROR: Cannot read boot image header\n");
                 return -1;
 	}
 
+	/* 判断标志位是否是 "ANDROID!"         */ 
 	if (memcmp(hdr->magic, BOOT_MAGIC, BOOT_MAGIC_SIZE)) {
 		dprintf(CRITICAL, "ERROR: Invalid boot image header\n");
                 return -1;
 	}
 
+	/* 判断分区指定的页大小是否与当前机器匹配                    */
 	if (hdr->page_size && (hdr->page_size != page_size)) {
 		page_size = hdr->page_size;
 		page_mask = page_size - 1;
 	}
 
 	/* Authenticate Kernel */
+	/* 采用签名的内核,且设备没有未解锁 */
 	if(target_use_signed_kernel() && (!device.is_unlocked) && (!device.is_tampered))
 	{
 		image_addr = (unsigned char *)target_get_scratch_address();
-		kernel_actual = ROUND_TO_PAGE(hdr->kernel_size, page_mask);
-		ramdisk_actual = ROUND_TO_PAGE(hdr->ramdisk_size, page_mask);
-		imagesize_actual = (page_size + kernel_actual + ramdisk_actual);
+		kernel_actual = ROUND_TO_PAGE(hdr->kernel_size, page_mask);     /* kernel大小 */
+		ramdisk_actual = ROUND_TO_PAGE(hdr->ramdisk_size, page_mask);   /* ramdisk大小 */
+		imagesize_actual = (page_size + kernel_actual + ramdisk_actual); 
 
 		offset = 0;
 
@@ -439,6 +460,7 @@ int boot_linux_from_mmc(void)
 		device.is_tampered = 1;
 
 		/* Read image without signature */
+		/* 从 EMMC 读取除了签名之外的boot/fastboot部分(kernel+ramdisk) */
 		if (mmc_read(ptn + offset, (void *)image_addr, imagesize_actual))
 		{
 			dprintf(CRITICAL, "ERROR: Cannot read boot image\n");
@@ -447,12 +469,14 @@ int boot_linux_from_mmc(void)
 
 		offset = imagesize_actual;
 		/* Read signature */
+		/* 从 EMMC 读取内核的签名信息 */
 		if(mmc_read(ptn + offset, (void *)(image_addr + offset), page_size))
 		{
 			dprintf(CRITICAL, "ERROR: Cannot read boot image signature\n");
 		}
 		else
 		{
+			/* 对 boot.img 鉴权 */
 			auth_kernel_img = image_verify((unsigned char *)image_addr,
 					(unsigned char *)(image_addr + imagesize_actual),
 					imagesize_actual,
@@ -465,14 +489,17 @@ int boot_linux_from_mmc(void)
 			}
 		}
 
-		/* Move kernel and ramdisk to correct address */
+		/* Move kernel and ramdisk to correct address */ 
+		/* 将 kernel 和 ramdisk 移到正确的地址处  */
 		memmove((void*) hdr->kernel_addr, (char *)(image_addr + page_size), hdr->kernel_size);
 		memmove((void*) hdr->ramdisk_addr, (char *)(image_addr + page_size + kernel_actual), hdr->ramdisk_size);
 
 		/* Make sure everything from scratch address is read before next step!*/
 		if(device.is_tampered)
 		{
-			write_device_info_mmc(&device);
+			/* 签名验证不通过 */
+		
+			write_device_info_mmc(&device); /*将info写入到devinfo分区,则下次开机是,devinfo分区 */
 		#ifdef TZ_TAMPER_FUSE
 			set_tamper_fuse_cmd();
 		#endif
@@ -483,6 +510,8 @@ int boot_linux_from_mmc(void)
 	}
 	else
 	{
+		/* boot.img 不需要验证签名的情况          ,直接读取kernel/ramdisk到指定位置 */
+	
 		offset += page_size;
 
 		n = ROUND_TO_PAGE(hdr->kernel_size, page_mask);
@@ -509,6 +538,7 @@ unified_boot:
 	dprintf(INFO, "ramdisk @ %x (%d bytes)\n", hdr->ramdisk_addr,
 		hdr->ramdisk_size);
 
+	/* 获取boot.img 的启动参数，如果没有则设置一个默认的 */
 	if(hdr->cmdline[0]) {
 		cmdline = (char*) hdr->cmdline;
 	} else {
@@ -517,6 +547,7 @@ unified_boot:
 	dprintf(INFO, "cmdline = '%s'\n", cmdline);
 
 	dprintf(INFO, "\nBooting Linux\n");
+	/* 调用 boot_linux() 解压并启动内核 */
 	boot_linux((void *)hdr->kernel_addr, (unsigned *) hdr->tags_addr,
 		   (const char *)cmdline, board_machtype(),
 		   (void *)hdr->ramdisk_addr, hdr->ramdisk_size);
@@ -1301,8 +1332,8 @@ void aboot_init(const struct app_descriptor *app)
 	/* 设置NAND/ EMMC读取信息页面大小 */
 	if (target_is_emmc_boot())
 	{
-		page_size = 2048;
-		page_mask = page_size - 1;
+		page_size = 2048;    /* 获取mmc/ufs的页大小，ufs为4096，emmc为2048  */
+		page_mask = page_size - 1;  /* 获取mmc/ufs的页掩码 */
 	}
 	else
 	{
@@ -1312,32 +1343,37 @@ void aboot_init(const struct app_descriptor *app)
 
 	if(target_use_signed_kernel())
 	{
+		/* 获取device_info信息，开发中需要关注 device_info 信息，它牵扯到fastboot是否被禁掉，boot.img是否需要鉴权等等 */
 		read_device_info(&device);
-
 	}
 
+	/* 根据不同的硬件获取emmc/ufs序列号   , 例如: lk/target/msm7627a/init.c */
+	/* 如果源码编译，这里可以随便修改硬件序列号 */
 	target_serialno((unsigned char *) sn_buf);
 	dprintf(SPEW,"serial number: %s\n",sn_buf);
 	surf_udc_device.serialno = sn_buf;
 
 	/* 读取按键信息，判断是正常开机，还是进入 fastboot ,还是进入recovery 模式 */
-	if (keys_get_state(KEY_HOME) != 0)
+	if (keys_get_state(KEY_HOME) != 0) /* HOME 键被按下 */
 		boot_into_recovery = 1;
-	if (keys_get_state(KEY_VOLUMEUP) != 0)
+	if (keys_get_state(KEY_VOLUMEUP) != 0) /* 音量上键被按下 */
 		boot_into_recovery = 1;
 	if(!boot_into_recovery)
 	{
-		if (keys_get_state(KEY_BACK) != 0)
+		/* 同时按下返回键或者音量下键，则启动fastboot模式 */
+		if (keys_get_state(KEY_BACK) != 0) 
 			goto fastboot;
 		if (keys_get_state(KEY_VOLUMEDOWN) != 0)
 			goto fastboot;
 	}
 
-	#if NO_KEYPAD_DRIVER
+	#if NO_KEYPAD_DRIVER  // 如果没有按键驱动? 
 	if (fastboot_trigger())
 		goto fastboot;
 	#endif
 
+	/* 获取重启原因，设置相应的开机模式标志，之前使用的是共享内存记录重启原因，最新转为使用pmic的pon寄存器记录重启原因 */
+	/* 不同的硬件平台实现方式不一样(例:lk/target/mdm9615/init.c) */
 	reboot_mode = check_reboot_mode();
 	if (reboot_mode == RECOVERY_MODE) {
 		boot_into_recovery = 1;
@@ -1345,27 +1381,30 @@ void aboot_init(const struct app_descriptor *app)
 		goto fastboot;
 	}
 
-	if (target_is_emmc_boot())
+normal_boot:
+	if (target_is_emmc_boot())  /* 从emmc/ufs启动 */
 	{
-		if(emmc_recovery_init())
+		if(emmc_recovery_init()) /* recovery模式需要的一些初始化 */
 			dprintf(ALWAYS,"error in emmc_recovery_init\n");
-		if(target_use_signed_kernel())
+		if(target_use_signed_kernel())  /* 判断是否使用了签名的kernel（即boot.img） */
 		{
 			if((device.is_unlocked) || (device.is_tampered))
 			{
 			#ifdef TZ_TAMPER_FUSE
-				set_tamper_fuse_cmd();
+				set_tamper_fuse_cmd();  /* 暂不关注fuse */
 			#endif
 			#if USE_PCOM_SECBOOT
-				set_tamper_flag(device.is_tampered);
+				set_tamper_flag(device.is_tampered); /* 暂不关注secboot */
 			#endif
 			}
 		}
 
-		boot_linux_from_mmc();
+		/* 从emmc/ufs加载boot.img，选择dts，设置cmdline，跳转到kernel */ 
+		boot_linux_from_mmc();  
 	}
 	else
 	{
+		/* 从nanflash启动，当前已经没有手机厂商在使用nandflash了，可以忽略此代码 */
 		recovery_init();
 #if USE_PCOM_SECBOOT
 	if((device.is_unlocked) || (device.is_tampered))
@@ -1389,6 +1428,7 @@ fastboot:
 	if(!usb_init)
 		udc_init(&surf_udc_device);
 
+	/* 注册fastboot命令 */
 	fastboot_register("boot", cmd_boot);
 
 	if (target_is_emmc_boot())
@@ -1411,10 +1451,10 @@ fastboot:
 	fastboot_publish("product", TARGET(BOARD));
 	fastboot_publish("kernel", "lk");
 	fastboot_publish("serialno", sn_buf);
-	partition_dump();
+	partition_dump();  /* 打印分区表信息 */
 	sz = target_get_max_flash_size();
-	fastboot_init(target_get_scratch_address(), sz);
-	udc_start();  // 开始 USB 协议 
+	fastboot_init(target_get_scratch_address(), sz); /* 初始化并启动fastboot，参数1为fastboot使用的内存buffer的地址，参数2位内存buffer的大小 */
+	udc_start();  /* 开始 USB 协议 */ 
 }
 
 APP_START(aboot)

@@ -24,6 +24,17 @@
 #include <app.h>
 #include <kernel/thread.h>
 
+/* 
+__apps_start,__apps_end 都在 system-onesegment.ld 文件中定义 
+再见 lk/include/app.h 里面的定义 
+	#define APP_START(appname) struct app_descriptor _app_##appname __SECTION(".apps") = { .name = #appname,
+	#define APP_END };
+	
+添加启动 的宏使用在 lk/app 目录下的各功能块里面，比如: lk/app/aboot/aboot.c 定义 
+	APP_START(aboot)
+		.init = aboot_init,
+	APP_END
+*/
 extern const struct app_descriptor __apps_start;
 extern const struct app_descriptor __apps_end;
 
@@ -37,12 +48,23 @@ void apps_init(void)
 	/* call all the init routines */
 	for (app = &__apps_start; app != &__apps_end; app++) {
 		if (app->init)
+			/* 
+			当前代码下依次调用 app_descriptor->init ：
+			lk/app/aboot/aboot.c
+			lk/app/shell/shell.c
+			lk/app/tests/tests.c
+			*/
 			app->init(app);
 	}
 
 	/* start any that want to start on boot */
+	/* 单独启动一个线程去启动一连串的功能 lk/app */
 	for (app = &__apps_start; app != &__apps_end; app++) {
 		if (app->entry && (app->flags & APP_FLAG_DONT_START_ON_BOOT) == 0) {
+			/* 
+			当前代码下依次调用 app_descriptor->entry ：
+			lk/app/shell/shell.c
+			*/
 			start_app(app);
 		}
 	}

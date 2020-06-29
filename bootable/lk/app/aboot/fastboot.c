@@ -371,10 +371,12 @@ int fastboot_init(void *base, unsigned size)
 	if (udc_register_gadget(&fastboot_gadget))
 		goto fail_udc_register;
 
+	/* 注册fastboot命令处理函数 */
 	fastboot_register("getvar:", cmd_getvar);
 	fastboot_register("download:", cmd_download);
 	fastboot_publish("version", "0.5");
 
+	// 启动线程监听fastboot命令行指令 
 	thr = thread_create("fastboot", fastboot_handler, 0, DEFAULT_PRIORITY, 4096);
 	if (!thr)
 	{

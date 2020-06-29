@@ -26,34 +26,42 @@
 
 .section ".text.boot"
 .globl _start
+
+/* NOR FLASH 启动入口 */ 
+/*
+ 初始化cpu,设置 irq, fiq, abort, undefined,system/user堆栈, 设置管理模式。
+然后通过"bl  kmain"跳转到main.c中执行 
+*/
 _start:
-	b	reset
-	b	arm_undefined
-	b	arm_syscall
-	b	arm_prefetch_abort
-	b	arm_data_abort
-	b	arm_reserved
-	b	arm_irq
-	b	arm_fiq
+	/* 从0开始位置是一个中断向量表(8x4连续字节) */
+	/* arm处理器从0位置开始执行.需要将协处理CP15中的c1控制寄存器的中的V位配为0 */
+	b	reset            /* 复位 */
+ 	b	arm_undefined    /* 未定义指令中断 */
+	b	arm_syscall      /* 软件中断(SWI) */
+ 	b	arm_prefetch_abort  /* 预取指令中止 */
+	b	arm_data_abort   /* 数据访问终止 */
+	b	arm_reserved     /* 保留 */
+	b	arm_irq          /* 外部中断请求(IRQ) */
+	b	arm_fiq          /* 快速中断请求(FIQ) */
 
 reset:
 
-#ifdef ENABLE_TRUSTZONE
+#ifdef ENABLE_TRUSTZONE 
 	/*Add reference to TZ symbol so linker includes it in final image */
 	ldr r7, =_binary_tzbsp_tzbsp_bin_start
 #endif
 	/* do some cpu setup */
 #if ARM_WITH_CP15
         /* Read SCTLR */
-	mrc		p15, 0, r0, c1, c0, 0
+	mrc		p15, 0, r0, c1, c0, 0 /* MCR/MRC{cond} P15,opcode_1,Rd,CRn,CRm,opcode_2 读取cp15协处理器的寄存器1（Control register）的值到通用寄存器r0中 */
 		/* XXX this is currently for arm926, revist with armv6 cores */
 		/* new thumb behavior, low exception vectors, i/d cache disable, mmu disabled */
-	bic		r0, r0, #(1<<15| 1<<13 | 1<<12)
-	bic		r0, r0, #(1<<2 | 1<<0)
+	bic		r0, r0, #(1<<15| 1<<13 | 1<<12)  /* 位清除指令，Low addresses = 0x00000000, ICache disabled */
+	bic		r0, r0, #(1<<2 | 1<<0)  /* DCache disabled, MMU disabled */
 		/* enable alignment faults */
-	orr		r0, r0, #(1<<1)
+	orr		r0, r0, #(1<<1)  /* Data address alignment fault checking disabled */
         /* Write SCTLR */
-	mcr		p15, 0, r0, c1, c0, 0
+	mcr		p15, 0, r0, c1, c0, 0  /* 将设置好的r0的值写入到p15的寄存器1中，完成关闭MMU，禁用ICahce和DCache等 */
 #ifdef ENABLE_TRUSTZONE
   /*nkazi: not needed ? Setting VBAR to location of new vector table : 0x80000      */
  ldr             r0, =0x00080000
@@ -87,15 +95,17 @@ reset:
 #endif
 
 	/* see if we need to relocate */
+	/* 判断是否需要代码重定位 */
 	mov		r0, pc
-	sub		r0, r0, #(.Laddr - _start)
+	sub		r0, r0, #(.Laddr - _start) /* 计算_start所在内存地址 */
 .Laddr:
-	ldr		r1, =_start
+	ldr		r1, =_start  /* 编译时候_start希望加载的地址 */
 	cmp		r0, r1
 	beq		.Lstack_setup
 
 	/* we need to relocate ourselves to the proper spot */
-	ldr		r2, =__data_end	
+	/* 与需要加载的地址不相同，那么将代码拷贝到需要加载的地址，并跳转过去继续执行之后的.Lstack_setup */
+	ldr		r2, =__data_end	 /* 同目录下的 system-onesegment.ld */
 
 .Lrelocate_loop:
 	ldr		r3, [r0], #4
@@ -103,8 +113,8 @@ reset:
 	cmp		r1, r2
 	bne		.Lrelocate_loop
 
-	/* we're relocated, jump to the right address */
-	ldr		r0, =.Lstack_setup
+	/* wea are relocated, jump to the right address */
+	ldr		r0, =.Lstack_setup /* 跳转到新地址的.Lstack_setup 位置 */
 	bx		r0
 
 .ltorg
@@ -116,47 +126,50 @@ warm_boot_tag:
 .Lstack_setup:
 	/* set up the stack for irq, fiq, abort, undefined, system/user, and lastly supervisor mode */
 	mrs     r0, cpsr
-	bic     r0, r0, #0x1f
+	bic     r0, r0, #0x1f  /*  清除处理器模式位M[4:0] */
 
-	ldr		r2, =abort_stack_top
-	orr     r1, r0, #0x12 // irq
-	msr     cpsr_c, r1
-	ldr		r13, =irq_save_spot		/* save a pointer to a temporary dumping spot used during irq delivery */
+	ldr		r2, =abort_stack_top  /* 将abort_stack_top的地址赋给r2 */
+	orr     r1, r0, #0x12 // irq 0b10010
+	msr     cpsr_c, r1    /* 设置irq模式 */
+	ldr		r13, =irq_save_spot		/* save a pointer to a temporary dumping spot used during irq delivery 将全局符号irq_save_spot的地址赋给r13 */
 	    
-	orr     r1, r0, #0x11 // fiq
-	msr     cpsr_c, r1
-	mov		sp, r2
+	orr     r1, r0, #0x11 // fiq 0b10001 
+	msr     cpsr_c, r1   /* 设置fiq模式 */
+	mov		sp, r2 /* 设置fiq模式的堆栈 */
 	            
-	orr     r1, r0, #0x17 // abort
-	msr     cpsr_c, r1
-	mov		sp, r2
+	orr     r1, r0, #0x17 // abort 0b10111 
+	msr     cpsr_c, r1    /* 设置abort模式 */
+	mov		sp, r2 /* 设置abort模式的堆栈 */
 	    
-	orr     r1, r0, #0x1b // undefined
-	msr     cpsr_c, r1
-	mov		sp, r2
+	orr     r1, r0, #0x1b // undefined 0b11011 
+	msr     cpsr_c, r1  /*  设置undefined模式 */
+	mov		sp, r2 /* 设置undefined模式的堆栈 */
 	    
-	orr     r1, r0, #0x1f // system
-	msr     cpsr_c, r1
-	mov		sp, r2
+	orr     r1, r0, #0x1f // system 0b11111 
+	msr     cpsr_c, r1  /* 设置system模式 */
+	mov		sp, r2 /* 设置system模式的堆栈 */
 
-	orr		r1, r0, #0x13 // supervisor
-	msr		cpsr_c, r1
-	mov		sp, r2
+	orr		r1, r0, #0x13 // supervisor 0b10011 
+	msr		cpsr_c, r1 /* 设置supervisor模式 */
+	mov		sp, r2 /* 设置supervisor模式的堆栈 */
 
 	/* copy the initialized data segment out of rom if necessary */
-	ldr		r0, =__data_start_rom
+	ldr		r0, =__data_start_rom   /* 同目录下的 system-onesegment.ld */
 	ldr		r1, =__data_start
 	ldr		r2, =__data_end
 
-	cmp		r0, r1
-	beq		.L__do_bss
+        /* 比较__data_start_rom和__data_start的内存地址是否相等，如果相等则跳转到.L__do_bss处 */
+	cmp		r0, r1 
+	beq		.L__do_bss 
 
+        /* 移动代码到指定地址 */
 .L__copy_loop:
 	cmp		r1, r2
 	ldrlt	r3, [r0], #4
 	strlt	r3, [r1], #4
 	blt		.L__copy_loop
 
+        /* 进行bss段清零 */
 .L__do_bss:
 	/* clear out the bss */
 	ldr		r0, =__bss_start
@@ -172,7 +185,7 @@ warm_boot_tag:
 	ISB
 #endif
 
-	bl		kmain
+	bl		kmain   /* 跳转到C语言函数里面继续执行lk/kernel/main.c */
 	b		.
 
 .ltorg
@@ -181,11 +194,11 @@ warm_boot_tag:
 .align 2
 	/* the abort stack is for unrecoverable errors.
 	 * also note the initial working stack is set to here.
-	 * when the threading system starts up it'll switch to a new 
-	 * dynamically allocated stack, so we don't need it for very long
+	 * when the threading system starts up it will switch to a new 
+	 * dynamically allocated stack, so we do not need it for very long
 	 */
-abort_stack:
-	.skip 1024
+abort_stack: 
+	.skip 1024  /* 异常堆栈的大小1024字节 */
 abort_stack_top:
 
 .rodata:
