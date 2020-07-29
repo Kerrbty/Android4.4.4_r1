@@ -1,0 +1,25 @@
+这里就是 Linux 内核了，源码下载地址: https://www.kernel.org/pub/linux/kernel/
+
+分析64位ARM模式。
+整个64位地址空间中有两段有效地址空间:
+1. 0x0000000000000000 - 0x0000007FFFFFFFFF(512GB)，通过TTBR0寻址，从level1开始做地址转换。
+2. 0xFFFFFF8000000000 - 0xFFFFFFFFFFFFFFFF(512GB)，通过TTBR1寻址，从level1开始做地址转换。
+
+pgd
+1.对于每一段地址空间，都有一个pgd表，表项为512个, 每一个表项大小8byte，共占空间4KB。
+2.pgd的每一个表项代表1GB地址空间，512个页表项共代表512GB空间。
+3.每个pgd表项可分为block/table（对应level1），如果为block，则pgd的内容就直接指向这1GB空间的物理地址(除去属性位)，如果为table，则pgd的内容指向一个二级页表(pmd表)的物理地址(除去属性位)。
+
+pmd
+1.对于每个pmd表，表项为512个,每个表项大小8byte，共占空间4KB.
+2.pmd的每一个表项代表2MB地址空间，512个页表项共代表1GB空间。
+3.每个pmd表项可分为block/table(对应level2)，如果为block，则pmd的内容就直接指向这2MB空间的物理地址(除去属性位),如果为table，则pmd的内容指向一个三级页表(pte表)的物理地址（除去属性位）。
+
+pte
+1.对于每个pte表，表项为512个，每个表项大小8byte，共占空间4KB。
+2.pte的每一个表项代表4KB地址空间，512个页表项共代表2MB空间。
+3.每个pte表项只分为有效/无效(对应level3),如果有效，则pte的内容就直接指向这4KB空间的物理地址(除去属性位），如果无效，则mmu解析到这里会产生访问异常。
+
+首先执行 kernel/linux/arch/arm64/kernel/head.S ,初始化 pdg 、pmd、 pte 以后正式进入内核代码执行 start_kernel() :  kernel/linux/init/main.c 
+
+在 kernel/linux/init/main.c 的 start_kernel() 函数中去启动 /init 进程 (启动详细过程见代码注释)

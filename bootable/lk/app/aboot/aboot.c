@@ -377,7 +377,7 @@ void boot_linux(void *kernel, unsigned *tags,
 	一般Android源码工程默认不包含Linux Kernel代码 ，
 	编译好的二进制在 /prebuilts/qemu-kernel/[cpu架构]/kernel-qemu 
 	*/
-	entry(0, machtype, tags); /* 跳入kernel执行 */
+	entry(0, machtype, tags); /* 跳入kernel执行,kernel 代码的第一调指令就是 B xxxxx,代码位于 kernel/arch/arm64/kernel/head.S (stext入口)  */
 }
 
 unsigned page_size = 0;
@@ -490,7 +490,7 @@ int boot_linux_from_mmc(void)
 		}
 
 		/* Move kernel and ramdisk to correct address */ 
-		/* 将 kernel 和 ramdisk 移到正确的地址处  */
+		/* 将 kernel 和 ramdisk 移到正确的地址处(一般加载到 0x00008000 物理地址)  */
 		memmove((void*) hdr->kernel_addr, (char *)(image_addr + page_size), hdr->kernel_size);
 		memmove((void*) hdr->ramdisk_addr, (char *)(image_addr + page_size + kernel_actual), hdr->ramdisk_size);
 
@@ -547,7 +547,7 @@ unified_boot:
 	dprintf(INFO, "cmdline = '%s'\n", cmdline);
 
 	dprintf(INFO, "\nBooting Linux\n");
-	/* 调用 boot_linux() 解压并启动内核 */
+	/* 调用 boot_linux() 解压(这份代码没看到解压过程，应该是需要解压才能调用entry的，否则异常)并启动内核 */
 	boot_linux((void *)hdr->kernel_addr, (unsigned *) hdr->tags_addr,
 		   (const char *)cmdline, board_machtype(),
 		   (void *)hdr->ramdisk_addr, hdr->ramdisk_size);

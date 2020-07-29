@@ -186,7 +186,7 @@ warm_boot_tag:
 #endif
 
 	bl		kmain   /* 跳转到C语言函数里面继续执行lk/kernel/main.c */
-	b		.
+	b		.   /* 执行到这里就死循环 */
 
 .ltorg
 

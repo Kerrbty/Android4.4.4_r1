@@ -146,7 +146,7 @@ static int bootstrap2(void *arg)
 
     // 对 LK 中所谓 app 初始化并运行起来，而 aboot_init 就将在这里开始被运行，android linux 内核的加载工作就在 aboot_init 中完成的  
 	dprintf(SPEW, "calling apps_init()\n");
-	apps_init();
+	apps_init(); // 调用位于 /lk/app/app.c 
 
 	return 0;
 }

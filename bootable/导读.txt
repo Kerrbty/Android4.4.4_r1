@@ -1,0 +1,18 @@
+启动模块在不同的处理器下可能编译出来文件不一样，一般该启动文件编译为 aboot 文件（ELF格式）
+
+ARM CPU 根据不同的复位方式，从物理地址为0开始的8x4的表中某处开始执行（默认是从 0x0 位置开始），阅读处理器启动代码：
+bootable/lk/arch/arm/crt0.S
+
+在 crt0.S 结尾跳转到 C 语言的main函数中执行
+bootable/lk/kernel/main.c
+
+在C语言中初始化基础的环境，特别注意 会创建一个线程去运行 bootstrap2 调用 apps_init() 函数，位于：
+bootable/lk/app/app.c 
+
+里面再遍历 bootable/lk/app/ 下注册的各种功能，其中最需要注意的是aboot功能 
+
+bootable/lk/app/aboot/aboot.c 
+(里面有调用硬件获取序列号的 target_serialno() 调用，如果这里修改手机序列号，则整机任何情况下都被修改)
+该文件是读取boot.img ,加载boot里面的 kernel 到内存 并根据里面的系统启动参数启动 kernel (一般加载到 0x00008000 物理地址)
+
+最原始的启动线程，最终退化成 idle 线程 

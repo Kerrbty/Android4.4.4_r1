@@ -1,0 +1,2 @@
+init 进程的源码位于 system/core/init/ 目录 
+
