@@ -10,6 +10,7 @@
  * published by the Free Software Foundation.
  *
  *  Kernel startup code for all 32-bit CPUs
+ *  所有32-bit CPU的内核启动代码
  */
 #include <linux/linkage.h>
 #include <linux/init.h>
@@ -28,11 +29,11 @@
 #endif
 
 /*
- * swapper_pg_dir is the virtual address of the initial page table.
- * We place the page tables 16K below KERNEL_RAM_VADDR.  Therefore, we must
- * make sure that KERNEL_RAM_VADDR is correctly set.  Currently, we expect
- * the least significant 16 bits to be 0x8000, but we could probably
- * relax this restriction to KERNEL_RAM_VADDR >= PAGE_OFFSET + 0x4000.
+ * swapper_pg_dir 是初始页表的虚拟地址. 
+ * 我们将页表放在KERNEL_RAM_VADDR以下16K的空间中. 因此我们必须保证 
+ * KERNEL_RAM_VADDR已经被正常设置.当前, 我们期望的是 
+ * 这个地址的最后16 bits为0x8000, 但我们或许可以放宽这项限制到 
+ * KERNEL_RAM_VADDR >= PAGE_OFFSET + 0x4000. 
  */
 #define KERNEL_RAM_VADDR	(PAGE_OFFSET + TEXT_OFFSET)
 #if (KERNEL_RAM_VADDR & 0xffff) != 0x8000
@@ -51,27 +52,33 @@
 	.globl	swapper_pg_dir
 	.equ	swapper_pg_dir, KERNEL_RAM_VADDR - PG_DIR_SIZE
 
+/*
+ * TEXT_OFFSET 是内核代码（解压后）相对于RAM起始的偏移. 
+ * 而#TEXT_OFFSET - 0x4000就是页表相对于RAM起始的偏移.  
+ * 这个宏的作用是将phys（RAM的启示地址）加上页表的偏移， 
+ * 而得到页表的起始物理地址 
+ */
 	.macro	pgtbl, rd, phys
 	add	\rd, \phys, #TEXT_OFFSET - PG_DIR_SIZE
 	.endm
 
 /*
- * Kernel startup entry point.
+ * 内核启动入口点. 
  * ---------------------------
  *
- * This is normally called from the decompressor code.  The requirements
- * are: MMU = off, D-cache = off, I-cache = dont care, r0 = 0,
+ * 这个入口正常情况下是在解压完成后被调用的. 
+ * 调用条件: MMU = off, D-cache = off, I-cache = dont care, r0 = 0, 
  * r1 = machine nr, r2 = atags or dtb pointer.
+ * 这些条件在解压完成后会被逐一满足，然后才跳转过来。 
  *
- * This code is mostly position independent, so if you link the kernel at
- * 0xc0008000, you call this at __pa(0xc0008000).
+ * 这些代码大多数是位置无关的, 如果你的内核入口地址在连接时确定为 
+ * 0xc0008000, 你调用此函数的物理地址就是 __pa(0xc0008000).  
  *
- * See linux/arch/arm/tools/mach-types for the complete list of machine
- * numbers for r1.
+ * 完整的machineID列表，请参见 linux/arch/arm/tools/mach-types 
  *
- * We're trying to keep crap to a minimum; DO NOT add any machine specific
- * crap here - that's what the boot loader (or in extreme, well justified
- * circumstances, zImage) is for.
+ * 我们尽量让代码简洁; 不在此处添加任何设备特定的代码 
+ * - 这些特定的初始化代码是boot loader的工作(或在极端情况下， 
+ * 有充分理由的情况下, 可以由zImage完成)。 
  */
 	.arm
 
@@ -86,14 +93,14 @@ ENTRY(stext)
 #ifdef CONFIG_ARM_VIRT_EXT
 	bl	__hyp_stub_install
 #endif
-	@ ensure svc mode and all interrupts masked
+	@ 进入svc模式并且关闭中断 
 	safe_svcmode_maskall r9
 
-	mrc	p15, 0, r9, c0, c0		@ get processor id
-	bl	__lookup_processor_type		@ r5=procinfo r9=cpuid
-	movs	r10, r5				@ invalid processor (r5=0)?
+	mrc	p15, 0, r9, c0, c0		@ 获取处理器id-->r9 
+	bl	__lookup_processor_type		@ 返回r5=procinfo r9=cpuid 
+	movs	r10, r5				@ r10=r5，并可以检测r5=0?注意当前r10的值 
  THUMB( it	eq )		@ force fixup-able long branch encoding
-	beq	__error_p			@ yes, error 'p'
+	beq	__error_p			@ yes, error 'p' 如果r5=0，则内核处理器不匹配，出错～死循环 
 
 #ifdef CONFIG_ARM_LPAE
 	mrc	p15, 0, r3, c0, c1, 4		@ read ID_MMFR0
@@ -103,6 +110,14 @@ ENTRY(stext)
 	blo	__error_p			@ only classic page table format
 #endif
 
+/* 
+ * 获取RAM的起始物理地址，并保存于 r8 = phys_offset 
+ * XIP内核与普通在RAM中运行的内核不同 
+ * （1）CONFIG_XIP_KERNEL 
+ *        通过运行时计算？？？？ 
+ * （2）正常RAM中运行的内核 
+ *         通过编译时确定（PLAT_PHYS_OFFSET 一般在arch/arm/mach-xxx/include/mach/memory.h定义）
+ */
 #ifndef CONFIG_XIP_KERNEL
 	adr	r3, 2f
 	ldmia	r3, {r4, r8}
@@ -116,30 +131,31 @@ ENTRY(stext)
 	 * r1 = machine no, r2 = atags or dtb,
 	 * r8 = phys_offset, r9 = cpuid, r10 = procinfo
 	 */
-	bl	__vet_atags
+	bl	__vet_atags   @ 判断r2（内核启动参数）指针的有效性 
 #ifdef CONFIG_SMP_ON_UP
-	bl	__fixup_smp
+	bl	__fixup_smp   @ ???如果运行SMP内核在单处理器系统中启动，做适当调整 
 #endif
 #ifdef CONFIG_ARM_PATCH_PHYS_VIRT
-	bl	__fixup_pv_table
+	bl	__fixup_pv_table  @ ????根据内核在内存中的位置修正物理地址与虚拟地址的转换机制 
 #endif
-	bl	__create_page_tables
+	bl	__create_page_tables  @ 初始化页表！ 
 
 	/*
-	 * The following calls CPU specific code in a position independent
-	 * manner.  See arch/arm/mm/proc-*.S for details.  r10 = base of
-	 * xxx_proc_info structure selected by __lookup_processor_type
-	 * above.  On return, the CPU will be ready for the MMU to be
-	 * turned on, and r0 will hold the CPU control register value.
+	 * 以下使用位置无关的方法调用的是CPU特定代码。 
+	 * 详情请见arch/arm/mm/proc-*.S 
+	 * r10 = xxx_proc_info 结构体的基地址（在上面__lookup_processor_type函数中选中的） 
+	 * 返回时, CPU 已经为 MMU 的启动做好了准备, 
+	 * 且 r0 保存着CPU控制寄存器的值. 
 	 */
-	ldr	r13, =__mmap_switched		@ address to jump to after
+	ldr	r13, =__mmap_switched		@ 在MMU启动之后跳入的第一个虚拟地址 
 						@ mmu has been enabled
-	adr	lr, BSYM(1f)			@ return (PIC) address
-	mov	r8, r4				@ set TTBR1 to swapper_pg_dir
- ARM(	add	pc, r10, #PROCINFO_INITFUNC	)
- THUMB(	add	r12, r10, #PROCINFO_INITFUNC	)
+	adr	lr, BSYM(1f)			@ 设置返回的地址(PIC) 
+	mov	r8, r4				@ 将swapper_pg_dir的物理地址放入r8， 
+							@ 以备__enable_mmu中将其放入TTBR1 
+ ARM(	add	pc, r10, #PROCINFO_INITFUNC	)  @ 跳入构架相关的初始化处理器函数(例如A8的是__v7_setup) 
+ THUMB(	add	r12, r10, #PROCINFO_INITFUNC	)  @主要目的只配置CP15（包括缓存配置） 
  THUMB(	mov	pc, r12				)
-1:	b	__enable_mmu
+1:	b	__enable_mmu    @ 启动MMU 
 ENDPROC(stext)
 	.ltorg
 #ifndef CONFIG_XIP_KERNEL
@@ -148,21 +164,23 @@ ENDPROC(stext)
 #endif
 
 /*
- * Setup the initial page tables.  We only setup the barest
- * amount which are required to get the kernel running, which
- * generally means mapping in the kernel code.
+ * 创建初始化页表.我们只创建最基本的页表， 
+ * 以满足内核运行的需要， 
+ * 这通常意味着仅映射内核代码本身. 
  *
  * r8 = phys_offset, r9 = cpuid, r10 = procinfo
  *
- * Returns:
+ * 返回: 
  *  r0, r3, r5-r7 corrupted
- *  r4 = physical page table address
+ *  r4 = 页表物理地址 
  */
 __create_page_tables:
-	pgtbl	r4, r8				@ page table address
+	pgtbl	r4, r8				@ 现在r4 = 页表的起始物理地址 
 
 	/*
-	 * Clear the swapper page table
+	 * 清零16K的一级初始页表区 
+	 * 这些页表在内核自解压时被设置过 
+	 * （此时MMU已关闭） 
 	 */
 	mov	r0, r4
 	mov	r3, #0
@@ -201,25 +219,33 @@ __create_page_tables:
 	add	r4, r4, #4			@ we only write the bottom word
 #endif
 #endif
-
-	ldr	r7, [r10, #PROCINFO_MM_MMUFLAGS] @ mm_mmuflags
+	/*
+	 * 获取节描述符的默认配置（除节基址外的其他配置） 
+	 * 这个数据依构架而不同，数据是用汇编文件配置的： 
+	 * arch/arm/mm/proc-xxx.S 
+	 * （此时MMU已关闭） 
+	 */
+	ldr	r7, [r10, #PROCINFO_MM_MMUFLAGS] @ 获取mm_mmuflags(节描述符默认配置)，保存于r7 
 
 	/*
-	 * Create identity mapping to cater for __enable_mmu.
-	 * This identity mapping will be removed by paging_init().
+	 * 创建特定映射，以满足__enable_mmu的需求。 
+	 * 此特定映射将被paging_init()删除。 
+	 * 
+	 * 其实这个特定的映射就是仅映射__enable_mmu功能函数区的页表 
+	 * 以保证在启用mmu时代码的正确执行--1:1映射（物理地址=虚拟地址） 
 	 */
 	adr	r0, __turn_mmu_on_loc
 	ldmia	r0, {r3, r5, r6}
-	sub	r0, r0, r3			@ virt->phys offset
-	add	r5, r5, r0			@ phys __turn_mmu_on
-	add	r6, r6, r0			@ phys __turn_mmu_on_end
-	mov	r5, r5, lsr #SECTION_SHIFT
-	mov	r6, r6, lsr #SECTION_SHIFT
+	sub	r0, r0, r3			@ 获取编译时确定的虚拟地址到当前物理地址的偏移 
+	add	r5, r5, r0			@ __turn_mmu_on 的当前物理地址
+	add	r6, r6, r0			@ __turn_mmu_on_end 的当前物理地址 
+	mov	r5, r5, lsr #SECTION_SHIFT  @ __turn_mmu_on 的节基址 
+	mov	r6, r6, lsr #SECTION_SHIFT  @ __enable_mmu_end 的节基址 
 
-1:	orr	r3, r7, r5, lsl #SECTION_SHIFT	@ flags + kernel base
-	str	r3, [r4, r5, lsl #PMD_ORDER]	@ identity mapping
-	cmp	r5, r6
-	addlo	r5, r5, #1			@ next section
+1:	orr	r3, r7, r5, lsl #SECTION_SHIFT	@ 生成节描述符：flags + 节基址 
+	str	r3, [r4, r5, lsl #PMD_ORDER]	@ 设置节描述符,1:1映射（物理地址=虚拟地址） 
+	cmp	r5, r6				@ 完成映射？（理论上一次就够了，这个函数应该不会大于1M吧～） 
+	addlo	r5, r5, #1			@ r5 = 下一节的基址 
 	blo	1b
 
 	/*
@@ -238,32 +264,52 @@ __create_page_tables:
 	/*
 	 * Map the kernel image separately as it is not located in RAM.
 	 */
+	 
+	/*
+	 * 现在创建内核的逻辑映射区页表（节映射）
+	 * 创建范围：KERNEL_START---KERNEL_END
+	 * KERNEL_START：内核最终运行的虚拟地址
+	 * KERNEL_END：内核代码结束的虚拟地址（bss段之后，但XIP不是）
+	 */
 #define XIP_START XIP_VIRT_ADDR(CONFIG_XIP_PHYS_ADDR)
-	mov	r3, pc
-	mov	r3, r3, lsr #SECTION_SHIFT
-	orr	r3, r7, r3, lsl #SECTION_SHIFT
-	add	r0, r4,  #(XIP_START & 0xff000000) >> (SECTION_SHIFT - PMD_ORDER)
+	mov	r3, pc			@ 获取当前物理地址  
+	mov	r3, r3, lsr #SECTION_SHIFT  	@ r3 = 当前物理地址的节基址 
+	orr	r3, r7, r3, lsl #SECTION_SHIFT		@ r3 为当前物理地址的节描述符 
+	
+	
+	/*
+	 * 下面是为了确定页表项的入口地址
+	 * 其实页表入口项的偏移就反应了对应的虚拟地址的高位
+	 *
+	 * 由于ARM指令集的8bit位图问题，只能分两次得到
+	 * KERNEL_START：内核最终运行的虚拟地址
+	 */
+	add	r0, r4,  #(XIP_START & 0xff000000) >> (SECTION_SHIFT - PMD_ORDER)	
 	str	r3, [r0, #((XIP_START & 0x00f00000) >> SECTION_SHIFT) << PMD_ORDER]!
 	ldr	r6, =(_edata_loc - 1)
 	add	r0, r0, #1 << PMD_ORDER
-	add	r6, r4, r6, lsr #(SECTION_SHIFT - PMD_ORDER)
+	add	r6, r4, r6, lsr #(SECTION_SHIFT - PMD_ORDER)	@ r6 = 内核逻辑映射结束的节基址 
 1:	cmp	r0, r6
-	add	r3, r3, #1 << SECTION_SHIFT
-	strls	r3, [r0], #1 << PMD_ORDER
+	add	r3, r3, #1 << SECTION_SHIFT		@ 生成节描述符（只需做基址递增） 
+	strls	r3, [r0], #1 << PMD_ORDER		@ 设置节描述符 
 	bls	1b
 #endif
 
 	/*
 	 * Then map boot params address in r2 if specified.
 	 * We map 2 sections in case the ATAGs/DTB crosses a section boundary.
+	 * 
+	 * 然后映射启动参数区（现在r2中的atags物理地址） 
+	 * 或者 
+	 * 如果启动参数区的虚拟地址没有确定（或者无效），则会映射RAM的头1MB. 
 	 */
 	mov	r0, r2, lsr #SECTION_SHIFT
 	movs	r0, r0, lsl #SECTION_SHIFT
-	subne	r3, r0, r8
-	addne	r3, r3, #PAGE_OFFSET
-	addne	r3, r4, r3, lsr #(SECTION_SHIFT - PMD_ORDER)
-	orrne	r6, r7, r0
-	strne	r6, [r3], #1 << PMD_ORDER
+	subne	r3, r0, r8		@ 如果atags指针无效，则r0 = r8（映射RAM的头1MB） 
+	addne	r3, r3, #PAGE_OFFSET	@ 转换为虚拟地址 
+	addne	r3, r4, r3, lsr #(SECTION_SHIFT - PMD_ORDER)	@ 确定页表项（节描述符）入口地址 
+	orrne	r6, r7, r0		@ 生成节描述符 
+	strne	r6, [r3], #1 << PMD_ORDER	@ 设置节描述符 
 	addne	r6, r6, #1 << SECTION_SHIFT
 	strne	r6, [r3]
 
@@ -272,22 +318,29 @@ __create_page_tables:
 						@ for 64-bit descriptors
 #endif
 
+/*
+ * 下面是调试信息的输出函数区 
+ * 这里做了IO内存空间的节映射 
+ */
 #ifdef CONFIG_DEBUG_LL
 #if !defined(CONFIG_DEBUG_ICEDCC) && !defined(CONFIG_DEBUG_SEMIHOSTING)
 	/*
 	 * Map in IO space for serial debugging.
 	 * This allows debug messages to be output
 	 * via a serial console before paging_init.
+	 *
+	 * 为串口调试映射IO内存空间（将串口IO内存之上的所有地址都映射了） 
+	 * 这允许调试信息（在paging_init之前）从串口控制台输出 
 	 */
-	addruart r7, r3, r0
-
+	addruart r7, r3, r0		@ 宏代码，位于arch/arm/mach-xxx/include/mach/debug-macro.S 
+							@ 作用是将串口控制寄存器的基址放入r7(物理地址)和r3(虚拟地址) 
 	mov	r3, r3, lsr #SECTION_SHIFT
 	mov	r3, r3, lsl #PMD_ORDER
 
-	add	r0, r4, r3
-	mov	r3, r7, lsr #SECTION_SHIFT
+	add	r0, r4, r3		@ r0为串口IO内存映射页表项的入口地址 
+	mov	r3, r7, lsr #SECTION_SHIFT	
 	ldr	r7, [r10, #PROCINFO_IO_MMUFLAGS] @ io_mmuflags
-	orr	r3, r7, r3, lsl #SECTION_SHIFT
+	orr	r3, r7, r3, lsl #SECTION_SHIFT		@ 生成节描述符 
 #ifdef CONFIG_ARM_LPAE
 	mov	r7, #1 << (54 - 32)		@ XN
 #ifdef CONFIG_CPU_ENDIAN_BE8
@@ -304,6 +357,7 @@ __create_page_tables:
 
 #else /* CONFIG_DEBUG_ICEDCC || CONFIG_DEBUG_SEMIHOSTING */
 	/* we don't need any serial debugging mappings */
+	/* 我们无需任何串口调试映射 for ICEDCC */ 
 	ldr	r7, [r10, #PROCINFO_IO_MMUFLAGS] @ io_mmuflags
 #endif
 
@@ -311,6 +365,9 @@ __create_page_tables:
 	/*
 	 * If we're using the NetWinder or CATS, we also need to map
 	 * in the 16550-type serial port for the debug messages
+	 * 
+	 * 如果我们在使用 NetWinder 或 CATS,我们也需要为调试信息映射 
+	 * 16550-type 串口 
 	 */
 	add	r0, r4, #0xff000000 >> (SECTION_SHIFT - PMD_ORDER)
 	orr	r3, r7, #0x7c000000
@@ -332,7 +389,7 @@ __create_page_tables:
 #ifdef CONFIG_ARM_LPAE
 	sub	r4, r4, #0x1000		@ point to the PGD table
 #endif
-	mov	pc, lr
+	mov	pc, lr		@页表创建结束，返回 
 ENDPROC(__create_page_tables)
 	.ltorg
 	.align
@@ -401,16 +458,15 @@ __secondary_data:
 
 
 /*
- * Setup common bits before finally enabling the MMU.  Essentially
- * this is just loading the page table pointer and domain access
- * registers.
+ * 在最后启动MMU前，设置一些常用位 Essentially 
+ * 其实，这里只是加载了页表指针和域访问控制数据寄存器
  *
  *  r0  = cp#15 control register
  *  r1  = machine ID
  *  r2  = atags or dtb pointer
  *  r4  = page table pointer
  *  r9  = processor ID
- *  r13 = *virtual* address to jump to upon completion
+ *  r13 = 最后要跳入的虚拟地址 
  */
 __enable_mmu:
 #if defined(CONFIG_ALIGNMENT_TRAP) && __LINUX_ARM_ARCH__ < 6
@@ -434,38 +490,38 @@ __enable_mmu:
 	mov	r5, #(domain_val(DOMAIN_USER, DOMAIN_MANAGER) | \
 		      domain_val(DOMAIN_KERNEL, DOMAIN_MANAGER) | \
 		      domain_val(DOMAIN_TABLE, DOMAIN_MANAGER) | \
-		      domain_val(DOMAIN_IO, DOMAIN_CLIENT))
-	mcr	p15, 0, r5, c3, c0, 0		@ load domain access register
-	mcr	p15, 0, r4, c2, c0, 0		@ load page table pointer
+		      domain_val(DOMAIN_IO, DOMAIN_CLIENT))		@设置域访问控制数据 
+	mcr	p15, 0, r5, c3, c0, 0		@ 载入域访问控制数据到DACR 
+	mcr	p15, 0, r4, c2, c0, 0		@ 载入页表基址到TTBR0 
 #endif
-	b	__turn_mmu_on
+	b	__turn_mmu_on		@ 开启MMU 
 ENDPROC(__enable_mmu)
 
 /*
- * Enable the MMU.  This completely changes the structure of the visible
- * memory space.  You will not be able to trace execution through this.
- * If you have an enquiry about this, *please* check the linux-arm-kernel
- * mailing list archives BEFORE sending another post to the list.
+ * 使能 MMU.这完全改变了可见的内存地址空间结构. 
+ * 您将无法通过这里跟踪执行。 
+ * 如果你已对此进行探究, *请*在向邮件列表发送另一个新帖之前， 
+ * 检查linux-arm-kernel的邮件列表归档 
  *
  *  r0  = cp#15 control register
  *  r1  = machine ID
  *  r2  = atags or dtb pointer
  *  r9  = processor ID
- *  r13 = *virtual* address to jump to upon completion
+ *  r13 = 最后要跳入的*虚拟*地址 
  *
- * other registers depend on the function called upon completion
+ * 其他寄存器依赖上面的调用函数 
  */
 	.align	5
 	.pushsection	.idmap.text, "ax"
 ENTRY(__turn_mmu_on)
 	mov	r0, r0
 	instr_sync
-	mcr	p15, 0, r0, c1, c0, 0		@ write control reg
+	mcr	p15, 0, r0, c1, c0, 0		@ 设置cp#15控制寄存器（启用MMU） 
 	mrc	p15, 0, r3, c0, c0, 0		@ read id reg
 	instr_sync
 	mov	r3, r3
-	mov	r3, r13
-	mov	pc, r3
+	mov	r3, r13		@ r3中装入最后要跳入的*虚拟*地址 
+	mov	pc, r3		@ 跳转到__mmap_switched 
 __turn_mmu_on_end:
 ENDPROC(__turn_mmu_on)
 	.popsection

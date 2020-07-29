@@ -1,5 +1,7 @@
 这里就是 Linux 内核了，源码下载地址: https://www.kernel.org/pub/linux/kernel/
 
+内部逻辑代码可参考博文： http://blog.chinaunix.net/uid/20543672/cid-6411-abstract-1.html 
+
 分析64位ARM模式。
 整个64位地址空间中有两段有效地址空间:
 1. 0x0000000000000000 - 0x0000007FFFFFFFFF(512GB)，通过TTBR0寻址，从level1开始做地址转换。
@@ -20,6 +22,8 @@ pte
 2.pte的每一个表项代表4KB地址空间，512个页表项共代表2MB空间。
 3.每个pte表项只分为有效/无效(对应level3),如果有效，则pte的内容就直接指向这4KB空间的物理地址(除去属性位），如果无效，则mmu解析到这里会产生访问异常。
 
-首先执行 kernel/linux/arch/arm64/kernel/head.S ,初始化 pdg 、pmd、 pte 以后正式进入内核代码执行 start_kernel() :  kernel/linux/init/main.c 
+首先执行(kernel/linux/arch/arm64/kernel/vmlinux.lds.S 中 ENTRY(stext) 配置启动函数为 stext)  
+kernel/linux/arch/arm64/kernel/head.S 
+初始化 pdg 、pmd、 pte 以后正式进入内核代码执行 start_kernel() :  kernel/linux/init/main.c 
 
 在 kernel/linux/init/main.c 的 start_kernel() 函数中去启动 /init 进程 (启动详细过程见代码注释)
