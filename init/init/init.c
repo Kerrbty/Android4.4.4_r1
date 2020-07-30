@@ -533,11 +533,13 @@ void execute_one_command(void)
     int ret;
 
     if (!cur_action || !cur_command || is_last_command(cur_action, cur_command)) {
+        // 从列表中摘取头部一个结点 
         cur_action = action_remove_queue_head();
         cur_command = NULL;
         if (!cur_action)
             return;
         INFO("processing action %p (%s)\n", cur_action, cur_action->name);
+        // 获取 cur_action->commands 命令行参数  
         cur_command = get_first_command(cur_action);
     } else {
         cur_command = get_next_command(cur_action, cur_command);
@@ -545,7 +547,8 @@ void execute_one_command(void)
 
     if (!cur_command)
         return;
-
+    
+    // 执行 action 指定的程序，传入指定的命令行参数  
     ret = cur_command->func(cur_command->nargs, cur_command->args);
     INFO("command '%s' r=%d\n", cur_command->args[0], ret);
 }
@@ -652,11 +655,14 @@ static int console_init_action(int nargs, char **args)
         snprintf(console_name, sizeof(console_name), "/dev/%s", console);
     }
 
+    // 打开屏幕设备 
     fd = open(console_name, O_RDWR);
     if (fd >= 0)
         have_console = 1;
     close(fd);
 
+    // 将 Android 启动 Logo 显示在LCD屏幕上 
+    // 仅支持 rle565 格式的图片 
     if( load_565rle_image(INIT_IMAGE_FILE) ) {
         fd = open("/dev/tty0", O_WRONLY);
         if (fd >= 0) {
@@ -786,6 +792,9 @@ static void process_kernel_cmdline(void)
     export_kernel_boot_props();
 }
 
+// 启动属性服务 prop 
+// 属性值的修改仅能在init进程中进行，即一个进程若想修改属性值，必须向 init 进程提交请求 
+// inti进程生成 "/dev/socket/property_service" 套接字 
 static int property_service_init_action(int nargs, char **args)
 {
     /* read any property files on system or data and
@@ -797,6 +806,7 @@ static int property_service_init_action(int nargs, char **args)
     return 0;
 }
 
+// 处理子进程终止 
 static int signal_init_action(int nargs, char **args)
 {
     signal_init();
@@ -983,16 +993,31 @@ int main(int argc, char **argv)
          * together in the initramdisk on / and then we'll
          * let the rc file figure out the rest.
          */
-    mkdir("/dev", 0755);
+    // 创建并挂载启动所需的文件目录 
+    // /dev /proc /sys 三个目录都是虚拟目录,源码编译不会生成,系统终止就会消失 
+    mkdir("/dev", 0755);  // 硬件设备访问所需的设备驱动程序 
     mkdir("/proc", 0755);
     mkdir("/sys", 0755);
-
-    mount("tmpfs", "/dev", "tmpfs", MS_NOSUID, "mode=0755");
+    /* 
+     * 生成结构如下： 
+     * /
+     * ├─── /dev [tmpfs] 
+     * │     │
+     * │     ├─ /pts [devpts] 
+     * │     │
+     * │     └─ /socket
+     * │ 
+     * ├───  /proc [proc]
+     * │      
+     * └───  /sys [sysfs]      
+     */
+     
+    mount("tmpfs", "/dev", "tmpfs", MS_NOSUID, "mode=0755");  // 一种虚拟内存的文件系统，典型的tmpfs文件系统完全驻留在RAM中，读写速度快 
     mkdir("/dev/pts", 0755);
     mkdir("/dev/socket", 0755);
-    mount("devpts", "/dev/pts", "devpts", 0, NULL);
-    mount("proc", "/proc", "proc", 0, NULL);
-    mount("sysfs", "/sys", "sysfs", 0, NULL);
+    mount("devpts", "/dev/pts", "devpts", 0, NULL);  // 一种虚拟终端文件系统 
+    mount("proc", "/proc", "proc", 0, NULL);  // 虚拟文件系统，只存在于内存中，借助此文件系统，应用程序可以与内核内部数据结构进行交互 
+    mount("sysfs", "/sys", "sysfs", 0, NULL);  // 在Linux2.6中引入，用于将系统中的设备组织成层次结构，并向用户模式程序提供详细的内核数据结构信息 
 
         /* indicate that booting is in progress to background fw loaders, etc */
     close(open("/dev/.booting", O_WRONLY | O_CREAT, 0000));
@@ -1003,8 +1028,9 @@ int main(int argc, char **argv)
          * Now that tmpfs is mounted on /dev, we can actually
          * talk to the outside world.
          */
-    open_devnull_stdio();
-    klog_init();
+    // 生成 log 设备，以便输出 init 进程的运行信息 
+    open_devnull_stdio();  // 创建运行日志输出设备 /dev/__null__,并将输入，输出，错误全部重定向到 __null__ 
+    klog_init();  // 生成 /dev/__kmsg__ 设备，init进程可以通过 printk 内核信息输出函数来输出log信息 (用 dmesg 命令可以查看日志) 
     property_init();
 
     get_hardware_name(hardware, &revision);
@@ -1034,17 +1060,45 @@ int main(int argc, char **argv)
     if (!is_charger)
         property_load_boot_defaults();
 
+    /*
+     * 开始解析 init.rc 脚本 (init.rc 是Android自己规定的初始化脚本 system/core/init/readme.txt ) 
+     * 脚本包含四个类型声明: 
+     *   Actions 
+     *   Commands
+     *   Services
+     *   Options 
+     */
+     
+    // 递归解析rc文件，生成服务列表与动作列表：
+    // 动作列表与服务列表会以列表的形式注册到（全局结构体）service_list 与 action_list 中 
     INFO("reading config file\n");
     init_parse_config_file("/init.rc");
 
+    /*
+     * action 命令优先顺序：
+     *     early-init  --> init --> early-fs --> fs --> post-fs 
+     *     --> post-fs-data --> charger --> early-boot --> boot 
+     *
+     * on early-init; 在初始化早期阶段触发；
+     * on init;       在初始化阶段触发；
+     * on late-init;  在初始化晚期阶段触发；
+     * on boot/charger：            当系统启动/充电时触发，还包含其他情况，此处不一一列举；
+     * on property:<key>=<value>:   当属性值满足条件时触发；
+     * 
+     * 使用命令 getprop | grep init.svc 可以查看当前系统服务状态 (running,stopped,restarting) 
+     */
+
+    // 遍历action_list,优先把 action->name 为"early-init"加入到 action_queue 队列 (即在后面循环中优先被执行) 
     action_for_each_trigger("early-init", action_add_queue_tail);
 
-    queue_builtin_action(wait_for_coldboot_done_action, "wait_for_coldboot_done");
+    // 将系统需要启动的服务加入到 action_queue 队列中 
+    queue_builtin_action(wait_for_coldboot_done_action, "wait_for_coldboot_done");  // 等冷插拔设备初始化 
     queue_builtin_action(mix_hwrng_into_linux_rng_action, "mix_hwrng_into_linux_rng");
-    queue_builtin_action(keychord_init_action, "keychord_init");
-    queue_builtin_action(console_init_action, "console_init");
+    queue_builtin_action(keychord_init_action, "keychord_init");  // 设备组合键的初始化操作 
+    queue_builtin_action(console_init_action, "console_init");  // 显示启动Logo 
 
     /* execute all the boot actions to get us started */
+    // 触发需要执行的 action 
     action_for_each_trigger("init", action_add_queue_tail);
 
     /* skip mounting filesystems in charger mode */
@@ -1060,11 +1114,12 @@ int main(int argc, char **argv)
      */
     queue_builtin_action(mix_hwrng_into_linux_rng_action, "mix_hwrng_into_linux_rng");
 
-    queue_builtin_action(property_service_init_action, "property_service_init");
-    queue_builtin_action(signal_init_action, "signal_init");
+    queue_builtin_action(property_service_init_action, "property_service_init"); // 启动属性服务 
+    queue_builtin_action(signal_init_action, "signal_init");  // 处理子进程(服务)终止,这里服务第一次启动运行 
     queue_builtin_action(check_startup_action, "check_startup");
 
-    if (is_charger) {
+    // 当处于充电模式，则 charger 加入执行队列；否则 boot 加入队列 
+    if (is_charger) { 
         action_for_each_trigger("charger", action_add_queue_tail);
     } else {
         action_for_each_trigger("early-boot", action_add_queue_tail);
@@ -1072,19 +1127,33 @@ int main(int argc, char **argv)
     }
 
         /* run all property triggers based on current state of the properties */
-    queue_builtin_action(queue_property_triggers_action, "queue_property_triggers");
+    queue_builtin_action(queue_property_triggers_action, "queue_property_triggers"); // 属性触发器 
 
 
 #if BOOTCHART
     queue_builtin_action(bootchart_init_action, "bootchart_init");
 #endif
 
+    // 进入无限循环，建立init的子进程（init是所有进程的父进程） 
     for(;;) {
         int nr, i, timeout = -1;
 
+        /* 
+         * 判断action列表是否为空，
+         * 如果不为空则，从 action_queue 列表上移除头结点(action),
+         * 并执行摘取的 action 命令（子进程对应的命令） 
+         */  
         execute_one_command();
+        
+        /*
+         * 遍历 service_list 列表，
+         * 如果列表中服务 flags 标记为 SVC_RESTARTING(进程已经死去标志), 
+         * 则重新启动该 action 命令
+         */
         restart_processes();
 
+        // 注册init进程监控的文件描述符 
+        // property service 功能 
         if (!property_set_fd_init && get_property_set_fd() > 0) {
             ufds[fd_count].fd = get_property_set_fd();
             ufds[fd_count].events = POLLIN;
@@ -1092,6 +1161,7 @@ int main(int argc, char **argv)
             fd_count++;
             property_set_fd_init = 1;
         }
+        // 子进程结束signal信号接收服务 
         if (!signal_fd_init && get_signal_fd() > 0) {
             ufds[fd_count].fd = get_signal_fd();
             ufds[fd_count].events = POLLIN;
@@ -1099,6 +1169,7 @@ int main(int argc, char **argv)
             fd_count++;
             signal_fd_init = 1;
         }
+        // 
         if (!keychord_fd_init && get_keychord_fd() > 0) {
             ufds[fd_count].fd = get_keychord_fd();
             ufds[fd_count].events = POLLIN;

@@ -324,6 +324,7 @@ void parse_new_section(struct parse_state *state, int kw,
            nargs > 1 ? args[1] : "");
     switch(kw) {
     case K_service:
+        // service 开头的命令加入到 service_list 列表中 
         state->context = parse_service(state, nargs, args);
         if (state->context) {
             state->parse_line = parse_line_service;
@@ -331,6 +332,7 @@ void parse_new_section(struct parse_state *state, int kw,
         }
         break;
     case K_on:
+        // on 开头的命令加入到 action_list 列表中 
         state->context = parse_action(state, nargs, args);
         if (state->context) {
             state->parse_line = parse_line_action;
@@ -338,12 +340,14 @@ void parse_new_section(struct parse_state *state, int kw,
         }
         break;
     case K_import:
+        // import 开头的命令加入到 import_list 列表中 
         parse_import(state, nargs, args);
         break;
     }
     state->parse_line = parse_line_no_op;
 }
 
+// 解析rc命令，并加入到对应列表 
 static void parse_config(const char *fn, char *s)
 {
     struct parse_state state;
@@ -362,6 +366,7 @@ static void parse_config(const char *fn, char *s)
     list_init(&import_list);
     state.priv = &import_list;
 
+    // 一行行的解析文本，解析出来的一行数据放在 state.line 中 
     for (;;) {
         switch (next_token(&state)) {
         case T_EOF:
@@ -370,6 +375,13 @@ static void parse_config(const char *fn, char *s)
         case T_NEWLINE:
             state.line++;
             if (nargs) {
+                /*
+                 * 获取当前一行命令的类型 
+                 * 有三种类型：
+                 *      import  -->  K_import   加入到 import_list 
+                 *      on      -->  K_on       加入到 action_list 
+                 *      service -->  K_service  加入到 service_list 
+                 */
                 int kw = lookup_keyword(args[0]);
                 if (kw_is(kw, SECTION)) {
                     state.parse_line(&state, 0, 0);
@@ -389,6 +401,7 @@ static void parse_config(const char *fn, char *s)
     }
 
 parser_done:
+    // 递归遍历 import  rc 子项，把所有的导入rc文件都一起解析加入列表 
     list_for_each(node, &import_list) {
          struct import *import = node_to_item(node, struct import, list);
          int ret;
@@ -401,12 +414,15 @@ parser_done:
     }
 }
 
+// 解析 rc 文件 
 int init_parse_config_file(const char *fn)
 {
+    // 读取整个文件 
     char *data;
     data = read_file(fn, 0);
     if (!data) return -1;
 
+    // 进行文件解析 
     parse_config(fn, data);
     DUMP();
     return 0;
