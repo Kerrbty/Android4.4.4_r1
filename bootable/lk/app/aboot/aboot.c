@@ -368,15 +368,15 @@ void boot_linux(void *kernel, unsigned *tags,
 	arch_disable_mmu();
 	
 	/*
-	调到entry开始执行kernel，传递三个参数: 
-	  第一个固定为0，
-	  第二个machtype被定义成LINUX_MACHTYPE，一般在对应平台的init.c中定义，
-	  第三个参数tags，就是传给给kernel的参数.
-	*/
+	 * 调到entry开始执行kernel，传递三个参数: 
+	 * 第一个固定为0，
+	 * 第二个machtype被定义成LINUX_MACHTYPE，一般在对应平台的init.c中定义，
+	 * 第三个参数tags，就是传给给kernel的参数.
+	 */
 	/* 
-	一般Android源码工程默认不包含Linux Kernel代码 ，
-	编译好的二进制在 /prebuilts/qemu-kernel/[cpu架构]/kernel-qemu 
-	*/
+	 *一般Android源码工程默认不包含Linux Kernel代码 ，
+	 * 编译好的二进制在 /prebuilts/qemu-kernel/[cpu架构]/kernel-qemu 
+	 */
 	entry(0, machtype, tags); /* 跳入kernel执行,kernel 代码的第一调指令就是 B xxxxx,代码位于 kernel/arch/arm64/kernel/head.S (stext入口)  */
 }
 

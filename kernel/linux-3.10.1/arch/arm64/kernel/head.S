@@ -91,8 +91,10 @@
  * Kernel startup entry point.
  * ---------------------------
  *
- * The requirements are:
+ * The requirements are(必须要求):
  *   MMU = off, D-cache = off, I-cache = on or off,
+ *   MMU 必须关闭，数据Cache 必须关闭，指令Cache可以打开也可以关闭 
+ * 
  *   x0 = physical address to the FDT blob.
  *
  * This code is mostly position independent so you call this at

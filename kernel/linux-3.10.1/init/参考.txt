@@ -1,0 +1,3 @@
+ARM Linux系统启动 start_kernel函数: http://www.linuxidc.com/Linux/2011-09/43680.htm
+台湾博士生 陳育書 的关于Linux启动分析的博文: http://www.formosaos.url.tw/linux/kinit.html 
+《深入Linux内核构架》附录D 系统启动
