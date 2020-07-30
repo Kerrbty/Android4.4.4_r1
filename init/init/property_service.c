@@ -545,7 +545,7 @@ void property_init(void)
 
 void property_load_boot_defaults(void)
 {
-    load_properties_from_file(PROP_PATH_RAMDISK_DEFAULT);
+    load_properties_from_file(PROP_PATH_RAMDISK_DEFAULT); // 这里读取 /default.prop 
 }
 
 int properties_inited(void)
@@ -560,7 +560,7 @@ static void load_override_properties() {
 
     ret = property_get("ro.debuggable", debuggable);
     if (ret && (strcmp(debuggable, "1") == 0)) {
-        load_properties_from_file(PROP_PATH_LOCAL_OVERRIDE);
+        load_properties_from_file(PROP_PATH_LOCAL_OVERRIDE); // 这里读取 /data/local.prop 
     }
 #endif /* ALLOW_LOCAL_PROP_OVERRIDE */
 }
@@ -582,8 +582,8 @@ void start_property_service(void)
 {
     int fd;
 
-    load_properties_from_file(PROP_PATH_SYSTEM_BUILD);
-    load_properties_from_file(PROP_PATH_SYSTEM_DEFAULT);
+    load_properties_from_file(PROP_PATH_SYSTEM_BUILD);  // 这里读取 /system/build.prop 
+    load_properties_from_file(PROP_PATH_SYSTEM_DEFAULT);  // 这里读取 /system/default.prop 
     load_override_properties();
     /* Read persistent properties after all default values have been loaded. */
     load_persistent_properties();

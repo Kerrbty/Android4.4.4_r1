@@ -1031,10 +1031,11 @@ int main(int argc, char **argv)
     // 生成 log 设备，以便输出 init 进程的运行信息 
     open_devnull_stdio();  // 创建运行日志输出设备 /dev/__null__,并将输入，输出，错误全部重定向到 __null__ 
     klog_init();  // 生成 /dev/__kmsg__ 设备，init进程可以通过 printk 内核信息输出函数来输出log信息 (用 dmesg 命令可以查看日志) 
-    property_init();
+    property_init();  // 创建并初始化属性域，属性由init进程管理，其他进程要修改必须提交请求给init进程 
 
     get_hardware_name(hardware, &revision);
 
+    // 解析命令行，向属性域添加信息 
     process_kernel_cmdline();
 
     union selinux_callback cb;
