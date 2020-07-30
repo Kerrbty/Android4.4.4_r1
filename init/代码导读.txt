@@ -1,2 +1,9 @@
 init 进程的源码位于 system/core/init/ 目录 
 
+程序入口在 init/init/init.c 的main函数
+主要工作流程：
+1. 挂载虚拟文件目录 /dev  /proc   /sys 
+2. 初始化日志输出设备 /dev/__kmsg__，后面可使用 printk 输出日志 
+3. 获取硬件信息 （用于 rc 文件里面的 ${ro.hardware} 填充）
+4. 递归解析 /init.rc 文件并生成 命令队列 action_queue， 和 服务列表 service_list
+5. 死循环执行所有的 action_queue 命令， 监控 service_list 列表服务是否有服务需要重启 
