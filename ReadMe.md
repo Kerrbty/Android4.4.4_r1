@@ -22,3 +22,5 @@
 
 3. init 编译成 /init 系统启动的第一个进程程序
 
+4. app_process 编译成 /system/bin/app_process （即 zygote 进程）
+

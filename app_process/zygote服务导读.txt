@@ -1,0 +1,2 @@
+Æô¶¯ÃüÁî£º /system/bin/app_process -Xzygote /system/bin --zygote --start-system-server
+
