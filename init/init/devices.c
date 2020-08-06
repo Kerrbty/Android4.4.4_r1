@@ -482,6 +482,7 @@ static void handle_device(const char *action, const char *devpath,
     int i;
 
     if(!strcmp(action, "add")) {
+        // 创建设备结点文件 
         make_device(devpath, path, block, major, minor);
         if (links) {
             for (i = 0; links[i]; i++)
@@ -830,7 +831,7 @@ void handle_device_fd()
         struct uevent uevent;
         parse_event(msg, &uevent);
 
-        handle_device_event(&uevent);
+        handle_device_event(&uevent); // 创建结点文件 
         handle_firmware_event(&uevent);
     }
 }
@@ -853,9 +854,10 @@ static void do_coldboot(DIR *d)
 
     fd = openat(dfd, "uevent", O_WRONLY);
     if(fd >= 0) {
+        // 强制引起uevent事件 
         write(fd, "add\n", 4);
         close(fd);
-        handle_device_fd();
+        handle_device_fd();  // 接收相关的uevent 
     }
 
     while((de = readdir(d))) {
@@ -899,6 +901,7 @@ void device_init(void)
     }
 
     /* is 256K enough? udev uses 16MB! */
+    // 创建套接字，用于接收uevent 
     device_fd = uevent_open_socket(256*1024, true);
     if(device_fd < 0)
         return;
@@ -906,6 +909,7 @@ void device_init(void)
     fcntl(device_fd, F_SETFD, FD_CLOEXEC);
     fcntl(device_fd, F_SETFL, O_NONBLOCK);
 
+    // 冷插拔设备初始化 
     if (stat(coldboot_done, &info) < 0) {
         t0 = get_usecs();
         coldboot("/sys/class");

@@ -21,6 +21,7 @@ on early-init
 
     start ueventd
 
+# 跟文件系统挂载部分 
 on init
     sysclktz 0
 
@@ -571,6 +572,7 @@ service healthd /sbin/healthd
     seclabel u:r:healthd:s0
     group root system
 
+# 连接串口或者adbd时，提供控制台输入输出的shell程序 
 service console /system/bin/sh
     class core
     console
@@ -583,6 +585,7 @@ on property:ro.debuggable=1
     start console
 
 # adbd is controlled via property triggers in init.<platform>.usb.rc
+# 用来管理QEMU模拟器或实际机器的状态（服务端） 
 service adbd /sbin/adbd --root_seclabel=u:r:su:s0
     class core
     socket adbd stream 660 system system
@@ -590,6 +593,7 @@ service adbd /sbin/adbd --root_seclabel=u:r:su:s0
     seclabel u:r:adbd:s0
 
 # adbd on at boot in emulator
+# 属性值改变时执行的命令 
 on property:ro.kernel.qemu=1
     start adbd
 
@@ -599,6 +603,7 @@ service lmkd /system/bin/lmkd
     socket lmkd seqpacket 0660 system system
     writepid /dev/cpuset/system-background/tasks
 
+# (进程间通信，图像输出，音频输出等功能) 
 service servicemanager /system/bin/servicemanager
     class core
     user system
@@ -610,6 +615,7 @@ service servicemanager /system/bin/servicemanager
     onrestart restart surfaceflinger
     onrestart restart drm
 
+# 用来挂载/管理USB存储或SD卡设备 
 service vold /system/bin/vold \
         --blkid_context=u:r:blkid:s0 --blkid_untrusted_context=u:r:blkid_untrusted:s0 \
         --fsck_context=u:r:fsck:s0 --fsck_untrusted_context=u:r:fsck_untrusted:s0

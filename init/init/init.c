@@ -862,6 +862,9 @@ struct selabel_handle* selinux_android_prop_context_handle(void)
     int i = 0;
     struct selabel_handle* sehandle = NULL;
     while ((sehandle == NULL) && seopts_prop[i].value) {
+        // 5.1 属性策略文件已经增加到2个 
+        // /property_contexts 
+        // /data/security/current/property_contexts 
         sehandle = selabel_open(SELABEL_CTX_ANDROID_PROP, &seopts_prop[i], 1);
         i++;
     }
@@ -923,6 +926,8 @@ static bool selinux_is_enforcing(void)
 
 int selinux_reload_policy(void)
 {
+    // 判断 /sys/fs/selinux 是否存在 
+    // 判断设置 ro.boot.selinux 是否为 disabled 
     if (selinux_is_disabled()) {
         return -1;
     }
@@ -951,19 +956,22 @@ int audit_callback(void *data, security_class_t cls, char *buf, size_t len)
 
 static void selinux_initialize(void)
 {
+    // 判断 /sys/fs/selinux 是否存在 
+    // 判断设置 ro.boot.selinux 是否为 disabled 
     if (selinux_is_disabled()) {
         return;
     }
 
     INFO("loading selinux policy\n");
+    // 用于加载sepolicy文件。该函数最终将sepolicy文件传递给kernel，这样kernel就有了安全策略配置文件 
     if (selinux_android_load_policy() < 0) {
         ERROR("SELinux: Failed to load policy; rebooting into recovery mode\n");
         android_reboot(ANDROID_RB_RESTART2, 0, "recovery");
         while (1) { pause(); }  // never reached
     }
 
-    selinux_init_all_handles();
-    bool is_enforcing = selinux_is_enforcing();
+    selinux_init_all_handles(); // 非内核启动selinux，调用该函数 
+    bool is_enforcing = selinux_is_enforcing();  // prop中得到的信息 
     INFO("SELinux: security_setenforce(%d)\n", is_enforcing);
     security_setenforce(is_enforcing);
 }
@@ -1045,6 +1053,8 @@ int main(int argc, char **argv)
     cb.func_audit = audit_callback;
     selinux_set_callback(SELINUX_CB_AUDIT, cb);
 
+    // 加载 selinux 配置信息 
+    // se是对rc文件的扩展 
     selinux_initialize();
     /* These directories were necessarily created before initial policy load
      * and therefore need their security context restored to the proper value.
@@ -1199,6 +1209,7 @@ int main(int argc, char **argv)
         }
 #endif
 
+        // 热插拔设备监控(监控来自驱动的uevent) 
         nr = poll(ufds, fd_count, timeout);
         if (nr <= 0)
             continue;
