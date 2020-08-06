@@ -54,11 +54,12 @@ static int wait_for_one_process(int block)
     struct command *cmd;
 
     // 等待任意子进程，如果子进程没有退出则返回0，否则则返回该子进程pid。 
+    // waitpid 用于回收进程所占用的资源 
     while ( (pid = waitpid(-1, &status, block ? 0 : WNOHANG)) == -1 && errno == EINTR );
     if (pid <= 0) return -1;
     INFO("waitpid returned pid %d, status = %08x\n", pid, status);
 
-    // 根据pid查找到相应的service 
+    // 根据pid查找到终止进程相应的service 
     svc = service_find_by_pid(pid);
     if (!svc) {
         ERROR("untracked pid %d exited\n", pid);
@@ -120,7 +121,7 @@ static int wait_for_one_process(int block)
     svc->flags |= SVC_RESTARTING;
 
     /* Execute all onrestart commands for this service. */
-    // 执行当前service中所有onrestart命令 
+    // 执行当前service中所有onrestart命令（重启依赖服务项） 
     list_for_each(node, &svc->onrestart.commands) {
         cmd = node_to_item(node, struct command, clist);
         cmd->func(cmd->nargs, cmd->args);
@@ -137,6 +138,8 @@ void handle_signal(void)
     /* we got a SIGCHLD - reap and restart as needed */
     // 读取数据 
     read(signal_recv_fd, tmp, sizeof(tmp));
+    // 如果有子进程需要启动或者启动失败则一直循环 
+    // 如果所有子进程都已经启动，则退出，等待下一次调用 
     while (!wait_for_one_process(0))
         ;
 }

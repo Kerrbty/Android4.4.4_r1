@@ -119,6 +119,7 @@ typedef struct {
 static int init_workspace(workspace *w, size_t size)
 {
     void *data;
+    // 是共享文件 /dev/__properties__ 
     int fd = open(PROP_FILENAME, O_RDONLY | O_NOFOLLOW);
     if (fd < 0)
         return -1;
@@ -141,6 +142,7 @@ static int init_property_area(void)
     if(init_workspace(&pa_workspace, 0))
         return -1;
 
+    // 调用exec()相关函数时文件将不会关闭 
     fcntl(pa_workspace.fd, F_SETFD, FD_CLOEXEC);
 
     property_area_inited = 1;
@@ -351,6 +353,11 @@ int property_set(const char *name, const char *value)
                strcmp("1", value) == 0) {
         selinux_reload_policy();
     }
+    // 属性更改通知相对应的属性触发器 
+    // (在init.rc中定义，例如：
+    //           on property:persist.service.adb.enable=1
+    //                start adbd
+    //  ) 
     property_changed(name, value);
     return 0;
 }
@@ -372,6 +379,7 @@ void handle_property_set_fd()
     }
 
     /* Check socket options here */
+    // ucred cr 结构体中，存储着传递信息的进程的 uid、pid、gid值 
     if (getsockopt(s, SOL_SOCKET, SO_PEERCRED, &cr, &cr_size) < 0) {
         close(s);
         ERROR("Unable to receive socket options\n");
@@ -399,10 +407,13 @@ void handle_property_set_fd()
 
         getpeercon(s, &source_ctx);
 
+        // 以ctl开头的消息并非请求更改系统属性值得消息，而是请求进程启动与终止的消息 
         if(memcmp(msg.name,"ctl.",4) == 0) {
             // Keep the old close-socket-early behavior when handling
             // ctl.* properties.
             close(s);
+            // 检测访问权限 
+            // 仅有system server、root以及相关进程才能使用ctl消息，终止或启动进程 
             if (check_control_perms(msg.value, cr.uid, cr.gid, source_ctx)) {
                 handle_control_message((char*) msg.name + 4, (char*) msg.value);
             } else {
@@ -410,7 +421,11 @@ void handle_property_set_fd()
                         msg.name + 4, msg.value, cr.uid, cr.gid, cr.pid);
             }
         } else {
+            // 除ctl其他消息都被用来更改系统属性值 
+            // 检查修改着与属性的访问权限 
+            // 各属性的访问权限采用Linux的uid进行区分 
             if (check_perms(msg.name, cr.uid, cr.gid, source_ctx)) {
+                // 权限可以修改，进行修改操作 
                 property_set((char*) msg.name, (char*) msg.value);
             } else {
                 ERROR("sys_prop: permission denied uid:%d  name:%s\n",

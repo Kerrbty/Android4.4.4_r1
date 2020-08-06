@@ -1164,7 +1164,7 @@ int main(int argc, char **argv)
         restart_processes();
 
         // 注册init进程监控的文件描述符 
-        // property service 功能 
+        // 获取prop信号句柄 
         if (!property_set_fd_init && get_property_set_fd() > 0) {
             ufds[fd_count].fd = get_property_set_fd();
             ufds[fd_count].events = POLLIN;
@@ -1172,7 +1172,7 @@ int main(int argc, char **argv)
             fd_count++;
             property_set_fd_init = 1;
         }
-        // 子进程结束signal信号接收服务 
+        // 获取子进程监控信号句柄 
         if (!signal_fd_init && get_signal_fd() > 0) {
             ufds[fd_count].fd = get_signal_fd();
             ufds[fd_count].events = POLLIN;
@@ -1209,7 +1209,7 @@ int main(int argc, char **argv)
         }
 #endif
 
-        // 热插拔设备监控(监控来自驱动的uevent) 
+        // 监听三种事件 （prop服务，子进程signal，keychord ） 
         nr = poll(ufds, fd_count, timeout);
         if (nr <= 0)
             continue;
@@ -1217,10 +1217,17 @@ int main(int argc, char **argv)
         for (i = 0; i < fd_count; i++) {
             if (ufds[i].revents == POLLIN) {
                 if (ufds[i].fd == get_property_set_fd())
+                    // 有进程请求修改prop属性 
+                    // 1. 先检查属性的访问权限 
+                    // 2. 在更改值(__system_property_update/__system_property_add) 
+                    // 3. 最后再出发更改以后的触发器 
                     handle_property_set_fd();
                 else if (ufds[i].fd == get_keychord_fd())
+                    // adbd 相关服务 
                     handle_keychord();
                 else if (ufds[i].fd == get_signal_fd())
+                    // 如果是子进程有退出 
+                    // 则调用 handle_signal 设置服务为 SVC_RESTARTING 标志 
                     handle_signal();
             }
         }

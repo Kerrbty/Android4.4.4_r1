@@ -100,6 +100,7 @@ void handle_keychord()
     __u16 id;
 
     // Only handle keychords if adb is enabled.
+    // 如果adbd服务启动的话，需要启动与之相关的服务(比如console...) 
     property_get("init.svc.adbd", adb_enabled);
     ret = read(keychord_fd, &id, sizeof(id));
     if (ret != sizeof(id)) {
