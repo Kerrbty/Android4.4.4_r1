@@ -135,6 +135,7 @@ static void setArgv0(const char *argv0, const char *newArgv0)
     strlcpy(const_cast<char *>(argv0), newArgv0, strlen(argv0));
 }
 
+// zygote启动参数 /system/bin/app_process -Xzygote /system/bin --zygote --start-system-server 
 int main(int argc, char* const argv[])
 {
 #ifdef __arm__
@@ -174,6 +175,8 @@ int main(int argc, char* const argv[])
     }
     mArgLen--;
 
+    // 继承自 AndroidRuntime 
+    // 用于初始化并运行 Dalvik 虚拟机，为运行Android应用程序做好准备 
     AppRuntime runtime;
     const char* argv0 = argv[0];
 
@@ -198,13 +201,16 @@ int main(int argc, char* const argv[])
         if (!parentDir) {
             parentDir = arg;
         } else if (strcmp(arg, "--zygote") == 0) {
+            // 如果参数带 --zygote 则进程为zygote进程，后面进行进程更名 
             zygote = true;
             niceName = "zygote";
         } else if (strcmp(arg, "--start-system-server") == 0) {
             startSystemServer = true;
         } else if (strcmp(arg, "--application") == 0) {
+            // 指定是应用程序，非工具程序 
             application = true;
         } else if (strncmp(arg, "--nice-name=", 12) == 0) {
+            // 设置进程名 (用于其他Android程序启动更名) 
             niceName = arg + 12;
         } else {
             className = arg;
@@ -220,10 +226,12 @@ int main(int argc, char* const argv[])
     runtime.mParentDir = parentDir;
 
     if (zygote) {
+        // 如果是zygote进程，运行这里 
         runtime.start("com.android.internal.os.ZygoteInit",
                 startSystemServer ? "start-system-server" : "");
     } else if (className) {
         // Remainder of args get passed to startup class main()
+        // 如果其他应用程序，运行这里 
         runtime.mClassName = className;
         runtime.mArgC = argc - i;
         runtime.mArgV = argv + i;
