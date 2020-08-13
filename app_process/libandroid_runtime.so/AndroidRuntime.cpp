@@ -832,17 +832,19 @@ void AndroidRuntime::start(const char* className, const char* options)
     //ALOGD("Found LD_ASSUME_KERNEL='%s'\n", kernelHack);
 
     /* start the virtual machine */
+    // 启动 Dalvik 虚拟机 
     JniInvocation jni_invocation;
     jni_invocation.Init(NULL);
     JNIEnv* env;
     if (startVm(&mJavaVM, &env) != 0) {
         return;
     }
-    onVmCreated(env);
+    onVmCreated(env);  // 必须在创建虚拟机后，其他代码之前运行 
 
     /*
      * Register android functions.
      */
+    // 注册虚拟机要调用使用的 JNI 函数（gRegJNI[]） 
     if (startReg(env) < 0) {
         ALOGE("Unable to register all android natives\n");
         return;
@@ -887,7 +889,7 @@ void AndroidRuntime::start(const char* className, const char* options)
             ALOGE("JavaVM unable to find main() in '%s'\n", className);
             /* keep going */
         } else {
-            // 调用main方法，转入 ZygoteInit 类运行，直到虚拟机运行结束才返回 
+            // 调用main方法，转入 ZygoteInit::main( ) 运行，直到虚拟机运行结束才返回 
             env->CallStaticVoidMethod(startClass, startMeth, strArray);
 
 #if 0
